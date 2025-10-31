@@ -1,0 +1,13 @@
+streamlit
+python-dotenv
+google-genai
+openinference-instrumentation-google-genai
+pydub
+ffmpeg-python
+numpy
+loguru
+uvicorn
+fastapi
+audioop-lts
+langfuse
+python-multipart
