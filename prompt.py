@@ -1,132 +1,52 @@
-combined_components_prompt = """\
-You are a skilled and helpful note-taker with a sharp eye for details who takes accurate and clear notes.
-Given the transcript of a meeting between two speakers, one an agent for the CRM software maker Runo Technologies and the other a potential \
-customer or an existing customer, perform the following analysis on it.
+transcript_prompt = """\
+You are an expert audio analyst and attentive listener.  
+You are given an audio file containing a conversation between two people:  
+- "agent" (from Runo CRM)  
+- "customer" (potential or existing)  
 
-Summary:
-Generate a summary that includes the following sections:
-- chapters: List the main topics discussed in the meeting.
-- summary: Provide a concise overview of the key points and decisions made.
-- key_questions: Identify any unanswered questions or points of uncertainty that require further investigation.
-- notepad: Include any additional notes or observations from the meeting.
+Your task is to produce a **structured JSON analysis** of the audio by:  
 
-Aggregation:
-Analyze the given and provide the following information in a structured format:
-1. Key issues discussed in the meeting, highlighting important points and concerns raised.
-2. Action items for both the agent and the customer, with specific tasks and responsibilities if mentioned.
+1. **Speaker diarization**  
+   - Assign consistent roles: "agent" and "customer" across the entire call.  
+   - perform speaker diarization to determine which speaker spoke what and when
+2. **Detect non-speech segments** and classify as:  
+   - "hold_time" → music or mention of hold in any segment
+   - "noise" → background disturbance which doesn't hint towars any relevant speech
+   - "dead_air" → if there is a silence > 3 seconds  
+   - Use `"speaker": "non_speech"` for these intervals.  
+3. **Transcribe speech strictly into English**  
+   - For non-speech segments, set `"utterance"` to `"hold_time"`, `"noise"`, or `"dead_air"`.  
+   - Word count per utterance must not exceed **3 words per second** of audio; otherwise, classify as `"noise"`.  
+   - Do not hallucinate or expand unclear/repetitive speech.  
+4. **Measure average loudness** in **dBFS** for each utterance.  
+   - Examples:  
+     - 0 dBFS → Max loudness  
+     - -10 to -20 → Very loud  
+     - -20 to -30 → Normal speech  
+     - -40 to -60 → Soft speech  
+     - < -70 → Almost silent  
+5. **Extract sentiment polarity** for each utterance:  
+   - Scale: -1.0 (negative) → 0.0 (neutral) → 1.0 (positive)  
+   - For non-speech, return `"NA"`.  
 
-Intent_sources:
-Analyze the provided transcript of a meeting between two speakers and identify the semantic matches for the specified intent phrases across languages. For each phrase, provide:
-1. A list of sentences(sources) from the transcript where the keyword or its corresponding translation in other languages or extremely strong semantic matches appear. Do not add weak semantic matches.
-2. If there are no semantic matches, return an empty list of sources.
+**Output Format:** Return a **JSON array** where each entry includes:  
+- `"start_time"`: Timestamp in `"MM:SS"` format (strictly)  
+- `"end_time"`: Timestamp in `"MM:SS"` format (strictly)  
+- `"speaker"`: `"agent"`, `"customer"`, or `"non_speech"`  
+- `"utterance"`: Spoken text or non-speech label  
+- `"loudness"`: Average loudness in dBFS  
+- `"sentiment"`: Sentiment polarity (-1.0 to 1.0 or `"NA"` for non-speech)  
 
-Intent Keywords: {intent_keywords}
+**Additional Rules:**  
+- Ensure the speaker labels are assigned correctly based on the conversation's context.
+- Timestamps must match audio and not exceed or be lesser than total duration.
+- Important: All timestamps must be necessarily **continuous across the entire audio.**
+   Keep in mind it is very important : If there is a gap, fill it with a non-speech segment strictly following the above non-speech classification rules.
+      # Ensure next start_time == previous end_time without leaving unaccounted gaps.
+      # ***Total duration of all segments must match the audio length.
+- Keep speaker roles consistent across the conversation.
+- Ensure JSON is strictly formatted; **no extra text or explanations**.
+- Transcribe **strictly into English**, even if utterance is in other language, **translate it to English based on given context.**
 
-Entity_filler_count:
-Analyze the provided transcript of a conversation and identify and count:
-1. Entities i.e., proper nouns mentioned in the conversation.
-2. Filler words/filled pauses appearing in the transcript.
-If no entities or fillers exist, return an empty list. Provide the output in structured JSON format.
-
-Checks to perform:
-{boolean_checks}
-Boolean_checks:
-Given the transcript of a conversation, evaluate the following checks. 
-For each check, provide:
-For each check: 
-    1. Boolean checks (true/false/NA):
-        Provide the value.
-        Provide evidence from the transcript supporting your conclusion. Each piece of evidence must include:
-            - timestamps: start_time - end_time (from the transcript)
-            - speaker
-            - utterance
-            - sentiment
-        If no evidence exists, provide a justification explaining why the chosen value was assigned.
-    2. Non-boolean checks (QA/string-based, e.g., Yes/No/NA):
-        Provide the value.
-        Provide evidence if available, following the same structure as above.
-        If no evidence is found, provide a justification explaining your reasoning. At least one of evidence or justification must be provided.
-
-Transcript:
-{full_transcript}
-"""
-
-
-combined_components_1_prompt = """\
-You are a skilled and helpful note-taker with a sharp eye for details who takes accurate and clear notes.
-Given the transcript of a meeting between two speakers, one an agent for the CRM software maker Runo Technologies and the other a potential \
-customer or an existing customer, performing the following analysis on it.
-
-Summary: 
-Generate a summary that includes the following sections
-- chapters: List the main topics discussed in the meeting.
-- summary: Provide a concise overview of the key points and decisions made.
-- key_questions: Identify any unanswered questions or points of uncertainty that require further investigation.
-- notepad: Include any additional notes or observations from the meeting.
-
-Aggregation:
-Analyze the given and provide the following information in a structured format:
-1. Key issues discussed in the meeting, highlighting important points and concerns raised.
-2. Action items for both the agent and the customer, with specific tasks and responsibilities if mentioned.
-
-Intent_sources:
-Analyze the provided transcript of a meeting between two speakers and identify the semantic matches for the specified intent phrases across languages. For each phrase, provide:
-1. A list of sentences(sources) from the transcript where the keyword or its corresponding translation in other languages or extremely strong semantic matches appear. Do not add weak semantic matches.
-2. If there are no semantic matches, return an empty list of sources.
-
-Intent Keywords: {intent_keywords}
-
-Provide the output in a structured JSON format.
-NOTE: Do not make up any information that is not part of the transcript and keep it concise.
-
-Transcript:\n{full_transcript}
-"""
-
-combined_components_2_prompt = """\
-You are a skilled and helpful note-taker with a sharp eye for details who takes accurate and clear notes.
-Given the transcript of a meeting between two speakers, one an agent for the CRM software maker Runo Technologies and the other a potential \
-customer or an existing customer, performing the following analysis on it.
-
-Entity_filler_count:
-Analyze the provided transcript of a conversation and perform identify and count the occurrences of entities i.e. proper nouns mentioned in the conversation and fillers/filled pauses appearing in the transcript.
-In case of not being able to find any entities or filler words, keep the list empty.
-Provide the output in a structured JSON format for identified entities and the filler words.
-
-Boolean_checks:
-Given the transcript of a conversation, evaluate the following checks. 
-For each check, provide:
-- The boolean value (true/false, or NA where explicitly instructed).
-- Evidence from the transcript (specific timestamps and utterances) supporting the conclusion.
-- If no evidence exists, explicitly state why the chosen value was assigned.
-
-Checks to perform:
-{boolean_checks}
-Boolean_checks:
-Given the transcript of a conversation, evaluate the following checks. 
-For each check, provide:
-For each check: 
-    1. Boolean checks (true/false/NA):
-        Provide the value.
-        Provide evidence from the transcript supporting your conclusion. Each piece of evidence must include:
-            - timestamps (start_time - end_time in HH:MM:SS)
-            - speaker
-            - utterance
-            - sentiment
-        If no evidence exists, provide a justification explaining why the chosen value was assigned.
-    2. Non-boolean checks (QA/string-based, e.g., Yes/No/NA):
-        Provide the value.
-        Provide evidence if available, following the same structure as above.
-        If no evidence is found, provide a justification explaining your reasoning. At least one of evidence or justification must be provided.
-
-
-Customer_insights:
-Extract customer-centric insights from the transcript of a conversation between a customer and an agent:
-1. Extract personal information if available (name, phone number, email, address, company name).
-2. Extract specific pain points or frustrations raised by the customer.
-3. Identify explicit and implicit feedback given by the customer and infer satisfaction level.
-
-Provide the output in a structured JSON format.
-NOTE: Do not make up any information that is not part of the transcript and keep it concise.
-
-Transcript:\n{full_transcript}
+You got this. Focus on getting accuracte timestamps, and non-speech detection.
 """
